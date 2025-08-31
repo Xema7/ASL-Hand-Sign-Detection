@@ -40,59 +40,37 @@ with col2:
     st.header("Upload an Image")
     uploaded_file = st.file_uploader("Choose an image...", type=["jpg", "jpeg", "png"])
 
-# --- Webcam Logic ---
-if run_webcam:
-    cap = cv2.VideoCapture(0)
-    if not cap.isOpened():
-        st.error("Could not open webcam. Please check your camera permissions.")
-    else:
-        st.info("Place your hand inside the green box. Press the checkbox again to stop.")
-        frame_placeholder = st.empty()
+# --- Webcam Logic --- (ADD THIS NEW BLOCK)
+with col1: # This keeps it in the left column
+    st.info("Click the button below to capture an image from your webcam.")
+    img_file_buffer = st.camera_input("Capture Image for Prediction")
 
-        while run_webcam:
-            ret, frame = cap.read()
-            if not ret:
-                st.error("Failed to capture frame from webcam.")
-                break
-            
-            frame = cv2.flip(frame, 1)
+    if img_file_buffer is not None:
+        # To read image file buffer as bytes:
+        bytes_data = img_file_buffer.getvalue()
+        # Convert the bytes data to a numpy array
+        cv2_img = cv2.imdecode(np.frombuffer(bytes_data, np.uint8), cv2.IMREAD_COLOR)
 
-            # Define the Region of Interest (ROI)
-            box_size = 300
-            height, width, _ = frame.shape
-            x1 = int((width - box_size) / 2)
-            y1 = int((height - box_size) / 2)
-            x2 = x1 + box_size
-            y2 = y1 + box_size
+        # Display the captured image
+        st.image(cv2_img, channels="BGR", caption='Your Captured Image')
+        st.markdown("---")
 
-            # Draw the ROI box
-            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-            
-            # Extract and preprocess the ROI
-            roi = frame[y1:y2, x1:x2]
-            rgb_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2RGB)
-            resized_roi = cv2.resize(rgb_roi, IMG_SIZE)
-            img_array = tf.keras.utils.img_to_array(resized_roi)
+        with st.spinner('Analyzing image...'):
+            # Preprocess the image for the model
+            rgb_img = cv2.cvtColor(cv2_img, cv2.COLOR_BGR2RGB)
+            resized_img = cv2.resize(rgb_img, IMG_SIZE)
+            img_array = tf.keras.utils.img_to_array(resized_img)
             img_array = tf.expand_dims(img_array, 0)
-
-            # Make prediction
-            with st.spinner('Predicting...'):
-                predictions = model.predict(img_array, verbose=0)
             
+            # Make prediction
+            predictions = model.predict(img_array, verbose=0)
             predicted_index = np.argmax(predictions[0])
             predicted_class = class_names[predicted_index]
             confidence = 100 * np.max(predictions[0])
 
-            # Display prediction on the frame
-            display_text = f"Prediction: {predicted_class} ({confidence:.1f}%)"
-            cv2.putText(frame, display_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
-
-            # Display the frame in Streamlit
-            frame_placeholder.image(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB), channels="RGB")
-
-        cap.release()
-        cv2.destroyAllWindows()
-
+            st.success(f"**Predicted Sign:** {predicted_class}")
+            st.info(f"**Confidence:** {confidence:.2f}%")
+            
 # --- Image Upload Logic ---
 if uploaded_file is not None:
     # To read file as bytes:
