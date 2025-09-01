@@ -26,97 +26,74 @@ model, class_names = load_model_and_classes()
 # Constants
 IMG_SIZE = (64, 64)
 
+# --- Reusable Prediction Function ---
+def predict_sign(image_np):
+    """
+    Takes a numpy array image (in BGR format from OpenCV), preprocesses it,
+    and returns the predicted class and confidence score.
+    """
+    # Preprocess the image for the model
+    rgb_img = cv2.cvtColor(image_np, cv2.COLOR_BGR2RGB)
+    resized_img = cv2.resize(rgb_img, IMG_SIZE)
+    img_array = tf.keras.utils.img_to_array(resized_img)
+    img_array = tf.expand_dims(img_array, 0)
+    
+    # Make prediction
+    with st.spinner('Predicting...'):
+        predictions = model.predict(img_array, verbose=0)
+    
+    predicted_index = np.argmax(predictions[0])
+    predicted_class = class_names[predicted_index]
+    confidence = 100 * np.max(predictions[0])
+    
+    return predicted_class, confidence
+
 # --- UI Layout ---
 st.title("ASL Hand Sign Detector")
-st.markdown("This application uses a Convolutional Neural Network to detect American Sign Language hand signs in real-time or from an uploaded image.")
+st.markdown("This application uses a Convolutional Neural Network to detect American Sign Language hand signs from a captured photo or an uploaded image.")
 
 col1, col2 = st.columns(2)
 
+# --- Webcam Capture Logic ---
 with col1:
-    st.header("Live Webcam Detection")
-    run_webcam = st.checkbox('Start Webcam')
+    st.header("Capture from Webcam")
+    # Use st.camera_input to provide a "Take photo" button
+    camera_image = st.camera_input(
+        "Position your hand and take a photo", 
+        key="camera_capture"
+    )
 
+    # When a photo is taken, camera_image is no longer None
+    if camera_image is not None:
+        # Read the image bytes and convert to a numpy array for OpenCV
+        bytes_data = camera_image.getvalue()
+        cv2_img = cv2.imdecode(np.frombuffer(bytes_data, np.uint8), cv2.IMREAD_COLOR)
+
+        st.markdown("---")
+        st.write("Analyzing captured image...")
+        
+        # Get and display the prediction
+        predicted_class, confidence = predict_sign(cv2_img)
+        st.success(f"**Predicted Sign:** {predicted_class}")
+        st.info(f"**Confidence:** {confidence:.2f}%")
+
+# --- Image Upload Logic ---
 with col2:
     st.header("Upload an Image")
     uploaded_file = st.file_uploader("Choose an image...", type=["jpg", "jpeg", "png"])
 
-# --- Webcam Logic ---
-if run_webcam:
-    cap = cv2.VideoCapture(0)
-    if not cap.isOpened():
-        st.error("Could not open webcam. Please check your camera permissions.")
-    else:
-        st.info("Place your hand inside the green box. Press the checkbox again to stop.")
-        frame_placeholder = st.empty()
+    if uploaded_file is not None:
+        # Read the uploaded file and convert to a numpy array
+        bytes_data = uploaded_file.getvalue()
+        cv2_img = cv2.imdecode(np.frombuffer(bytes_data, np.uint8), cv2.IMREAD_COLOR)
 
-        while run_webcam:
-            ret, frame = cap.read()
-            if not ret:
-                st.error("Failed to capture frame from webcam.")
-                break
-            
-            frame = cv2.flip(frame, 1)
-
-            # Define the Region of Interest (ROI)
-            box_size = 300
-            height, width, _ = frame.shape
-            x1 = int((width - box_size) / 2)
-            y1 = int((height - box_size) / 2)
-            x2 = x1 + box_size
-            y2 = y1 + box_size
-
-            # Draw the ROI box
-            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-            
-            # Extract and preprocess the ROI
-            roi = frame[y1:y2, x1:x2]
-            rgb_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2RGB)
-            resized_roi = cv2.resize(rgb_roi, IMG_SIZE)
-            img_array = tf.keras.utils.img_to_array(resized_roi)
-            img_array = tf.expand_dims(img_array, 0)
-
-            # Make prediction
-            with st.spinner('Predicting...'):
-                predictions = model.predict(img_array, verbose=0)
-            
-            predicted_index = np.argmax(predictions[0])
-            predicted_class = class_names[predicted_index]
-            confidence = 100 * np.max(predictions[0])
-
-            # Display prediction on the frame
-            display_text = f"Prediction: {predicted_class} ({confidence:.1f}%)"
-            cv2.putText(frame, display_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
-
-            # Display the frame in Streamlit
-            frame_placeholder.image(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB), channels="RGB")
-
-        cap.release()
-        cv2.destroyAllWindows()
-
-# --- Image Upload Logic ---
-if uploaded_file is not None:
-    # To read file as bytes:
-    bytes_data = uploaded_file.getvalue()
-    # Convert bytes data to a numpy array
-    cv2_img = cv2.imdecode(np.frombuffer(bytes_data, np.uint8), cv2.IMREAD_COLOR)
-
-    with col2:
+        # Display the uploaded image
         st.image(cv2_img, channels="BGR", caption='Uploaded Image.', use_column_width=True)
         st.markdown("---")
 
+        # Add a button to trigger prediction
         if st.button('Predict Sign from Image'):
-            with st.spinner('Analyzing image...'):
-                # Preprocess the image for the model
-                rgb_img = cv2.cvtColor(cv2_img, cv2.COLOR_BGR2RGB)
-                resized_img = cv2.resize(rgb_img, IMG_SIZE)
-                img_array = tf.keras.utils.img_to_array(resized_img)
-                img_array = tf.expand_dims(img_array, 0)
-                
-                # Make prediction
-                predictions = model.predict(img_array, verbose=0)
-                predicted_index = np.argmax(predictions[0])
-                predicted_class = class_names[predicted_index]
-                confidence = 100 * np.max(predictions[0])
-
-                st.success(f"**Predicted Sign:** {predicted_class}")
-                st.info(f"**Confidence:** {confidence:.2f}%")
+            # Get and display the prediction
+            predicted_class, confidence = predict_sign(cv2_img)
+            st.success(f"**Predicted Sign:** {predicted_class}")
+            st.info(f"**Confidence:** {confidence:.2f}%")
